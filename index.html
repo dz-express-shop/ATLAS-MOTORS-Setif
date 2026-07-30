@@ -319,18 +319,18 @@
             <!-- SCROLLABLE CARS AREA ONLY -->
             <div id="catalog-scroll-area" class="flex-1 overflow-y-auto hide-scrollbar p-4 pb-36 relative z-10">
                 
-                <!-- 🔗 SOCIAL LINKS 🔗 -->
+                <!-- 🔗 قسم روابط التواصل الاجتماعي (تتحدث تلقائياً من CONFIG في الأسفل) 🔗 -->
                 <div class="relative z-50 flex justify-center gap-3 mb-4" dir="ltr">
-                    <a id="link-fb" href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
+                    <a id="link-fb" href="#" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
                         <i class="fa-brands fa-facebook-f pointer-events-none"></i>
                     </a>
-                    <a id="link-insta" href="https://instagram.com" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
+                    <a id="link-insta" href="#" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
                         <i class="fa-brands fa-instagram pointer-events-none"></i>
                     </a>
-                    <a id="link-tiktok" href="https://tiktok.com" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
+                    <a id="link-tiktok" href="#" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
                         <i class="fa-brands fa-tiktok pointer-events-none"></i>
                     </a>
-                    <a id="link-maps" href="https://maps.google.com" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-laserorange/20 border border-laserorange/30 flex items-center justify-center text-laserorange hover:bg-laserorange hover:text-white transition-all shadow-md cursor-pointer">
+                    <a id="link-maps" href="#" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-laserorange/20 border border-laserorange/30 flex items-center justify-center text-laserorange hover:bg-laserorange hover:text-white transition-all shadow-md cursor-pointer">
                         <i class="fa-solid fa-location-dot pointer-events-none"></i>
                     </a>
                 </div>
@@ -637,13 +637,15 @@
             }
         }
         
-        // 🟢 CONFIGURATION FOR ATLAS MOTORS 🟢
+        // =========================================================
+        // ⚙️ ضع جميع روابطك ورقم الهاتف هنا بسهولة ⚙️
+        // =========================================================
         const CONFIG = {
-            whatsappNumber: "213551331144",
-            facebookUrl: "https://www.facebook.com/profile.php?id=61578045595012",
-            instagramUrl: "https://www.instagram.com/digital_auto_cars/",
-            tiktokUrl: "https://www.tiktok.com/",
-            mapsUrl: "https://maps.app.goo.gl/CAuKqs5e6r1fXenLA",
+            whatsappNumber: "213550000000",                     // 👈 ضع رقم الواتساب هنا (بدون +)
+            facebookUrl: "https://www.facebook.com/YOUR_PAGE",  // 👈 ضع رابط صفحة الفيسبوك هنا
+            instagramUrl: "https://www.instagram.com/YOUR_ACCOUNT", // 👈 ضع رابط الإنستغرام هنا
+            tiktokUrl: "https://www.tiktok.com/@YOUR_ACCOUNT",  // 👈 ضع رابط حساب التيك توك هنا
+            mapsUrl: "https://maps.google.com/?q=Setif",       // 👈 ضع رابط خريطة المعرض (Google Maps) هنا
             googleScriptUrl: localStorage.getItem('atlas_google_script') || ""
         };
 
@@ -703,7 +705,6 @@
         async function fetchVehicles() {
             try {
                 if (supabaseClient) {
-                    // 🟢 FETCHING STRICTLY FROM 'atlas_vehicles' TABLE 🟢
                     const { data, error } = await supabaseClient.from('atlas_vehicles').select('*').order('created_at', { ascending: false });
                     if (error) throw error;
                     state.vehicles = data || [];
@@ -732,7 +733,6 @@
         async function saveVehicleToDb(car) {
             try {
                 if (supabaseClient) {
-                    // 🟢 SAVING STRICTLY TO 'atlas_vehicles' TABLE 🟢
                     const { error } = await supabaseClient.from('atlas_vehicles').upsert([car]);
                     if (error) {
                         alert("خطأ أثناء الحفظ في Supabase: " + error.message);
@@ -1017,7 +1017,7 @@
             }, 600);
         }
 
-        // ================= ADMIN SYSTEM (MAX 20 IMAGES HD) =================
+        // ================= ADMIN SYSTEM =================
         function openAdminAuth() {
             if(state.isOwnerSession) {
                 const adminCenter = document.getElementById('ownerCommandCenter');
