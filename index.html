@@ -523,9 +523,9 @@
                 <i class="fa-solid fa-user-shield text-white text-5xl"></i>
                 <div>
                     <h3 class="text-sm font-black text-white">تسجيل دخول الإدارة</h3>
-                    <p class="text-[9px] text-zinc-400 font-bold mt-1">الرمز السري: ...</p>
+                    <p class="text-[9px] text-zinc-400 font-bold mt-1">رمز السر: Atlas16</p>
                 </div>
-                <input type="password" maxlength="4" id="pinInput" placeholder="••••" class="w-full bg-black border border-white/10 rounded-xl p-4 text-center text-2xl tracking-[1em] font-black text-white focus:outline-none focus:border-laserorange shadow-inner" oninput="handlePinSubmission()" dir="ltr">
+                <input type="password" maxlength="10" id="pinInput" placeholder="••••••••" class="w-full bg-black border border-white/10 rounded-xl p-4 text-center text-xl tracking-[0.5em] font-black text-white focus:outline-none focus:border-laserorange shadow-inner" oninput="handlePinSubmission()" dir="ltr">
                 <button onclick="closeAdminAuth()" class="text-[10px] font-bold text-zinc-500 hover:text-white uppercase tracking-widest cursor-pointer">إلغاء</button>
             </div>
         </div>
@@ -641,11 +641,11 @@
         // ⚙️ ضع جميع روابطك ورقم الهاتف هنا بسهولة ⚙️
         // =========================================================
         const CONFIG = {
-            whatsappNumber: "213551331144",                     // 👈 ضع رقم الواتساب هنا (بدون +)
-            facebookUrl: "https://www.facebook.com/share/1DU5LhwaHb/",  // 👈 ضع رابط صفحة الفيسبوك هنا
-            instagramUrl: "https://www.instagram.com/atlas_motors__?igsh=MWN2MDYzZ3IyMnY0bA==", // 👈 ضع رابط الإنستغرام هنا
-            tiktokUrl: "https://vt.tiktok.com/ZSXXkVMTB/",  // 👈 ضع رابط حساب التيك توك هنا
-            mapsUrl: "https://maps.app.goo.gl/32L2UMrrPwkRTXqD7",       // 👈 ضع رابط خريطة المعرض (Google Maps) هنا
+            whatsappNumber: "213551331144",
+            facebookUrl: "https://www.facebook.com/share/1DU5LhwaHb/",
+            instagramUrl: "https://www.instagram.com/atlas_motors__?igsh=MWN2MDYzZ3IyMnY0bA==",
+            tiktokUrl: "https://vt.tiktok.com/ZSXXkVMTB/",
+            mapsUrl: "https://maps.app.goo.gl/32L2UMrrPwkRTXqD7",
             googleScriptUrl: localStorage.getItem('atlas_google_script') || ""
         };
 
@@ -1034,6 +1034,8 @@
             document.getElementById('biometricPinOverlay').classList.add('hidden');
             document.getElementById('pinInput').value = '';
         }
+        
+        // 🟢 UPDATE: VERIFICATION FOR Atlas16 PIN 🟢
         function handlePinSubmission() {
             const input = document.getElementById('pinInput');
             if (input.value === "Atlas16") {
@@ -1044,6 +1046,7 @@
                 input.value = '';
             }
         }
+        
         function lockAdminSession() {
             state.isOwnerSession = false;
             localStorage.setItem('isOwnerVerified', 'false');
