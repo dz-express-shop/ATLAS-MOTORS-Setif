@@ -319,7 +319,7 @@
             <!-- SCROLLABLE CARS AREA ONLY -->
             <div id="catalog-scroll-area" class="flex-1 overflow-y-auto hide-scrollbar p-4 pb-36 relative z-10">
                 
-                <!-- 🔗 قسم روابط التواصل الاجتماعي (تتحدث تلقائياً من CONFIG في الأسفل) 🔗 -->
+                <!-- 🔗 SOCIAL LINKS 🔗 -->
                 <div class="relative z-50 flex justify-center gap-3 mb-4" dir="ltr">
                     <a id="link-fb" href="#" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-xl bg-cardgray border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shadow-md cursor-pointer">
                         <i class="fa-brands fa-facebook-f pointer-events-none"></i>
@@ -335,9 +335,15 @@
                     </a>
                 </div>
 
-                <div class="relative mb-5 max-w-lg mx-auto w-full z-20">
+                <!-- SEARCH BAR -->
+                <div class="relative mb-3 max-w-lg mx-auto w-full z-20">
                     <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs"></i>
                     <input type="text" id="searchInput" oninput="renderCatalog()" placeholder="ابحث عن ماركة، موديل..." class="w-full bg-cardgray border border-white/10 rounded-2xl pl-10 pr-4 py-3.5 text-[11px] font-bold text-white focus:outline-none focus:border-laserorange transition-colors shadow-inner">
+                </div>
+
+                <!-- 🏷️ BRAND FILTER CHIPS BAR (فلتر الماركات) 🏷️ -->
+                <div id="brandFilterContainer" class="flex items-center gap-2 overflow-x-auto hide-scrollbar mb-5 max-w-lg mx-auto w-full z-20 py-1" dir="ltr">
+                    <!-- Brand Filter Buttons generated dynamically via JS -->
                 </div>
 
                 <div id="carsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto w-full relative z-20"></div>
@@ -652,6 +658,7 @@
         let state = {
             vehicles: [],
             currentScope: 'all', 
+            selectedBrand: 'all', // 🟢 حالة الفلترة بالماركة 🟢
             isOwnerSession: localStorage.getItem('isOwnerVerified') === 'true',
             tempImages: []
         };
@@ -694,6 +701,7 @@
 
         function enterCatalog(scope) {
             state.currentScope = scope;
+            state.selectedBrand = 'all'; // 🟢 إعادة تعيين فلتر الماركات عند تبديل الصنف 🟢
             const sub = document.getElementById('header-subtitle');
             if(sub) sub.innerText = scope === 'disponible' ? "متوفرة في المعرض" : "استيراد حسب الطلب";
             const searchEl = document.getElementById('searchInput');
@@ -775,6 +783,49 @@
             await saveVehicleToDb(car);
         }
 
+        // ================= 🏷️ BRAND FILTER CHIPS RENDERER 🏷️ =================
+        function renderBrandFilters() {
+            const container = document.getElementById('brandFilterContainer');
+            if(!container) return;
+
+            let relevant = Array.isArray(state.vehicles) ? state.vehicles : [];
+            if(state.currentScope !== 'all') {
+                relevant = relevant.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
+            }
+
+            // Extract unique brands
+            const brands = [...new Set(relevant.map(v => v && v.marque ? v.marque.trim().toUpperCase() : '').filter(Boolean))].sort();
+
+            if (brands.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const isAllActive = state.selectedBrand === 'all';
+            let html = `
+                <button onclick="selectBrandFilter('all')" class="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer ${isAllActive ? 'bg-laserorange text-white shadow-[0_0_12px_rgba(255,85,0,0.5)]' : 'bg-cardgray border border-white/10 text-zinc-400 hover:text-white'}">
+                    الكل
+                </button>
+            `;
+
+            brands.forEach(b => {
+                const isActive = state.selectedBrand === b;
+                html += `
+                    <button onclick="selectBrandFilter('${b}')" class="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer ${isActive ? 'bg-laserorange text-white shadow-[0_0_12px_rgba(255,85,0,0.5)]' : 'bg-cardgray border border-white/10 text-zinc-400 hover:text-white'}">
+                        ${b}
+                    </button>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function selectBrandFilter(brand) {
+            state.selectedBrand = brand;
+            renderBrandFilters();
+            renderCatalog();
+        }
+
         // ================= CATALOG RENDERER =================
         function renderCatalog() {
             const grid = document.getElementById('carsGrid');
@@ -782,6 +833,8 @@
 
             Object.keys(autoCarousels).forEach(key => clearInterval(autoCarousels[key]));
             autoCarousels = {};
+
+            renderBrandFilters(); // Sync brand chips bar
             
             const searchEl = document.getElementById('searchInput');
             const search = searchEl ? searchEl.value.toLowerCase().trim() : '';
@@ -791,6 +844,12 @@
             if(state.currentScope !== 'all') {
                 filtered = filtered.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
             }
+
+            // 🟢 APPLY BRAND FILTER 🟢
+            if (state.selectedBrand && state.selectedBrand !== 'all') {
+                filtered = filtered.filter(v => v && v.marque && v.marque.trim().toUpperCase() === state.selectedBrand);
+            }
+
             if (search) {
                 filtered = filtered.filter(v => 
                     (v && v.marque && v.marque.toLowerCase().includes(search)) || 
@@ -1035,7 +1094,7 @@
             document.getElementById('pinInput').value = '';
         }
         
-        // 🟢 UPDATE: VERIFICATION FOR Atlas16 PIN 🟢
+        // 🟢 PASSWORD CHECK UPDATED TO: Atlas16 🟢
         function handlePinSubmission() {
             const input = document.getElementById('pinInput');
             if (input.value === "Atlas16") {
