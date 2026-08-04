@@ -182,7 +182,7 @@
             pointer-events: none;
             z-index: 10;
             display: none;
-            transition: opacity 0.4s ease;
+            transition: opacity 0.3s ease;
         }
         .page-layer.active {
             opacity: 1;
@@ -341,10 +341,8 @@
                     <input type="text" id="searchInput" oninput="renderCatalog()" placeholder="ابحث عن ماركة، موديل..." class="w-full bg-cardgray border border-white/10 rounded-2xl pl-10 pr-4 py-3.5 text-[11px] font-bold text-white focus:outline-none focus:border-laserorange transition-colors shadow-inner">
                 </div>
 
-                <!-- 🏷️ BRAND FILTER CHIPS BAR (فلتر الماركات) 🏷️ -->
-                <div id="brandFilterContainer" class="flex items-center gap-2 overflow-x-auto hide-scrollbar mb-5 max-w-lg mx-auto w-full z-20 py-1" dir="ltr">
-                    <!-- Brand Filter Buttons generated dynamically via JS -->
-                </div>
+                <!-- 🏷️ BRAND FILTER CHIPS BAR 🏷️ -->
+                <div id="brandFilterContainer" class="flex items-center gap-2 overflow-x-auto hide-scrollbar mb-5 max-w-lg mx-auto w-full z-20 py-1" dir="ltr"></div>
 
                 <div id="carsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto w-full relative z-20"></div>
             </div>
@@ -658,7 +656,7 @@
         let state = {
             vehicles: [],
             currentScope: 'all', 
-            selectedBrand: 'all', // 🟢 حالة الفلترة بالماركة 🟢
+            selectedBrand: 'all',
             isOwnerSession: localStorage.getItem('isOwnerVerified') === 'true',
             tempImages: []
         };
@@ -668,7 +666,7 @@
                 id: "id_1", marque: "TOYOTA", modele: "Hilux Revo", prix: "895M", annee: "2024", km: "0 km", 
                 typeCategory: "both", moteur: "2.8 D-4D", boite: "Auto", couleur: "Blanc Nacre",
                 desc: "Full option. Livraison immediate.", 
-                images: ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80"], 
+                images: ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58"], 
                 status: "disponible", createdAt: Date.now() 
             }
         ];
@@ -701,7 +699,7 @@
 
         function enterCatalog(scope) {
             state.currentScope = scope;
-            state.selectedBrand = 'all'; // 🟢 إعادة تعيين فلتر الماركات عند تبديل الصنف 🟢
+            state.selectedBrand = 'all';
             const sub = document.getElementById('header-subtitle');
             if(sub) sub.innerText = scope === 'disponible' ? "متوفرة في المعرض" : "استيراد حسب الطلب";
             const searchEl = document.getElementById('searchInput');
@@ -793,7 +791,6 @@
                 relevant = relevant.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
             }
 
-            // Extract unique brands
             const brands = [...new Set(relevant.map(v => v && v.marque ? v.marque.trim().toUpperCase() : '').filter(Boolean))].sort();
 
             if (brands.length === 0) {
@@ -834,7 +831,7 @@
             Object.keys(autoCarousels).forEach(key => clearInterval(autoCarousels[key]));
             autoCarousels = {};
 
-            renderBrandFilters(); // Sync brand chips bar
+            renderBrandFilters();
             
             const searchEl = document.getElementById('searchInput');
             const search = searchEl ? searchEl.value.toLowerCase().trim() : '';
@@ -845,7 +842,6 @@
                 filtered = filtered.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
             }
 
-            // 🟢 APPLY BRAND FILTER 🟢
             if (state.selectedBrand && state.selectedBrand !== 'all') {
                 filtered = filtered.filter(v => v && v.marque && v.marque.trim().toUpperCase() === state.selectedBrand);
             }
@@ -877,11 +873,12 @@
                     tagText = 'معرض + بالطلب';
                 }
 
-                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80"];
+                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58"];
 
-                let imagesHTML = carImages.map(img => `
+                // ⚡ OPTIMIZED LAZY LOADING & ASYNC DECODING FOR CARDS ⚡
+                let imagesHTML = carImages.map((img, idx) => `
                     <div class="snap-center-item w-full h-full shrink-0 relative">
-                        <img src="${img}" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80'">
+                        <img src="${img}" loading="${idx === 0 ? 'eager' : 'lazy'}" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58'">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
                     </div>
                 `).join('');
@@ -971,12 +968,12 @@
             const car = state.vehicles.find(v => v && String(v.id) === String(id));
             if(!car) return;
 
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80"];
+            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58"];
 
             const swiper = document.getElementById('modal-image-swiper');
-            swiper.innerHTML = carImages.map(img => `
+            swiper.innerHTML = carImages.map((img, idx) => `
                 <div class="w-full h-full snap-center-item shrink-0 flex items-center justify-center bg-black relative min-w-full">
-                    <img src="${img}" class="w-full h-full object-cover">
+                    <img src="${img}" loading="${idx === 0 ? 'eager' : 'lazy'}" decoding="async" class="w-full h-full object-cover">
                 </div>
             `).join('');
             swiper.scrollLeft = 0;
@@ -1094,7 +1091,7 @@
             document.getElementById('pinInput').value = '';
         }
         
-        // 🟢 PASSWORD CHECK UPDATED TO: Atlas16 🟢
+        // 🟢 PASSWORD CHECK: Atlas16 🟢
         function handlePinSubmission() {
             const input = document.getElementById('pinInput');
             if (input.value === "Atlas16") {
@@ -1130,16 +1127,17 @@
             container.innerHTML = '';
             container.classList.remove('hidden');
             
-            document.getElementById('f-image-label').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> جاري معالجة ${maxImages} صور بجودة عالية HD...`;
+            document.getElementById('f-image-label').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> جاري معالجة ${maxImages} صور وسرعة الضغط...`;
 
             for(let i=0; i<maxImages; i++) {
                 const b64 = await compressToSquare(files[i]);
                 state.tempImages.push(b64);
                 container.innerHTML += `<img src="${b64}" class="w-16 h-16 object-cover rounded-lg border border-white/20">`;
             }
-            document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور بجودة عالية HD`;
+            document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور مضغوطة بسرعة فائقة`;
         }
 
+        // ⚡ OPTIMIZED HIGH-SPEED COMPRESSION (600x600 @ 0.58) ⚡
         function compressToSquare(file) {
             return new Promise(resolve => {
                 const reader = new FileReader();
@@ -1152,9 +1150,9 @@
                         const startX = (img.width - size) / 2;
                         const startY = (img.height - size) / 2;
                         
-                        canvas.width = 800; canvas.height = 800;
-                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 800, 800);
-                        resolve(canvas.toDataURL('image/jpeg', 0.82));
+                        canvas.width = 600; canvas.height = 600;
+                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 600, 600);
+                        resolve(canvas.toDataURL('image/jpeg', 0.58));
                     };
                     img.src = e.target.result;
                 };
@@ -1247,7 +1245,7 @@
             state.vehicles.forEach(car => {
                 if(!car) return;
                 const isSold = car.status === 'vendu';
-                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80";
+                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58";
 
                 list.innerHTML += `
                 <div class="glass-panel border ${isSold ? 'border-red-600 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'border-white/10'} p-3 rounded-2xl flex flex-col gap-3 transition-all" dir="ltr">
