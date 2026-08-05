@@ -4,8 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ATLAS MOTORS | النخبة في عالم السيارات</title>
+    
+    <!-- ======================================================= -->
+    <!-- 🛑 1. TIKTOK PIXEL / META PIXEL PLACEHOLDER (HEAD) 🛑 -->
+    <!-- ======================================================= -->
+    <script>
+        // Example: !function(f,b,e,v,n,t,s) { ... fbq('init', 'YOUR_PIXEL_ID'); fbq('track', 'PageView'); }
+    </script>
 
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script>
@@ -25,7 +34,7 @@
                     animation: {
                         'glow-pulse': 'glowPulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'float-slow': 'floatSlow 3.5s ease-in-out infinite',
-                        'slide-up': 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'slide-up': 'slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
                         'pulse-red': 'pulseRed 2s infinite',
                         'shimmer': 'shimmer 2.5s infinite linear',
                         'breathing-glow': 'breathingGlow 4s ease-in-out infinite alternate',
@@ -197,7 +206,6 @@
             outline: none; border-color: #FF5500; box-shadow: 0 0 15px rgba(255,85,0,0.2); background: #0f0f18;
         }
 
-        /* Skeleton pulse for instant perceived speed */
         .skeleton-card {
             background: linear-gradient(90deg, #111116 25%, #1a1a22 50%, #111116 75%);
             background-size: 200% 100%;
@@ -343,7 +351,6 @@
                 <div id="brandFilterContainer" class="flex items-center gap-2 overflow-x-auto hide-scrollbar mb-5 max-w-lg mx-auto w-full z-20 py-1" dir="ltr"></div>
 
                 <div id="carsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto w-full relative z-20">
-                    <!-- Instant Skeletons while JS loads -->
                     <div class="w-full aspect-square rounded-[24px] skeleton-card border border-white/5"></div>
                     <div class="w-full aspect-square rounded-[24px] skeleton-card border border-white/5"></div>
                 </div>
@@ -628,7 +635,7 @@
     </div>
 
     <!-- ======================================================= -->
-    <!-- 🛑 SUPABASE ENGINE INTEGRATION 🛑                       -->
+    <!-- 🛑 SUPABASE ENGINE INTEGRATION (ATLAS MOTORS TABLE) 🛑   -->
     <!-- ======================================================= -->
     <script>
         const SUPABASE_URL = 'https://smumscrjovrsudhsaczy.supabase.co'; 
@@ -658,21 +665,11 @@
             selectedBrand: 'all',
             isOwnerSession: localStorage.getItem('isOwnerVerified') === 'true',
             tempImages: [],
-            renderLimit: 6 // ⚡ Render Chunking Limit for Instant DOM Speed ⚡
+            renderLimit: 6
         };
 
-        const DUMMY_DATA = [
-            { 
-                id: "id_1", marque: "TOYOTA", modele: "Hilux Revo", prix: "895M", annee: "2024", km: "0 km", 
-                typeCategory: "both", moteur: "2.8 D-4D", boite: "Auto", couleur: "Blanc Nacre",
-                desc: "Full option. Livraison immediate.", 
-                images: ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"], 
-                status: "disponible", createdAt: Date.now() 
-            }
-        ];
-
         let autoCarousels = {};
-        let loadedCarSwipers = {}; // Tracking loaded card swipers to lazy load image 2..N
+        let loadedCarSwipers = {};
 
         function applySocialConfig() {
             if(document.getElementById('link-fb')) document.getElementById('link-fb').href = CONFIG.facebookUrl;
@@ -701,7 +698,7 @@
         function enterCatalog(scope) {
             state.currentScope = scope;
             state.selectedBrand = 'all';
-            state.renderLimit = 6; // reset render limit
+            state.renderLimit = 6;
             const sub = document.getElementById('header-subtitle');
             if(sub) sub.innerText = scope === 'disponible' ? "متوفرة في المعرض" : "استيراد حسب الطلب";
             const searchEl = document.getElementById('searchInput');
@@ -714,26 +711,28 @@
             renderCatalog();
         }
 
-        // ================= ⚡ INSTANT CACHE-FIRST DATABASE ENGINE ⚡ =================
+        // ================= ⚡ INSTANT SMART CACHE & SUPABASE SYNC ⚡ =================
         async function fetchVehicles() {
-            // 🟢 1. INSTANT LOCAL CACHE LOAD (0ms LATENCY) 🟢
-            const cachedData = localStorage.getItem('atlas_vehicles_cache_v3');
+            // 🟢 STEP 1: LOAD FROM LOCAL STORAGE CACHES (PRESERVES PREVIOUS CARS) 🟢
+            const cachedData = localStorage.getItem('atlas_vehicles_cache_v3') || 
+                               localStorage.getItem('atlas_vehicles_cache_v2') || 
+                               localStorage.getItem('atlas_vehicles_db_v1');
             if (cachedData) {
                 try {
                     state.vehicles = JSON.parse(cachedData);
                     renderCatalog();
                 } catch (e) {
-                    getLocalStorageVehicles();
+                    state.vehicles = [];
                 }
-            } else {
-                getLocalStorageVehicles();
             }
 
-            // 🟢 2. SILENT BACKGROUND SYNC FROM SUPABASE 🟢
+            // 🟢 STEP 2: FETCH FRESH DATA FROM SUPABASE SAFELY WITHOUT CRASHING 🟢
             try {
                 if (supabaseClient) {
-                    const { data, error } = await supabaseClient.from('atlas_vehicles').select('*').order('created_at', { ascending: false });
-                    if (!error && data) {
+                    const { data, error } = await supabaseClient.from('atlas_vehicles').select('*');
+                    if (!error && Array.isArray(data) && data.length > 0) {
+                        // Safe Local Sorting by Date/ID in JavaScript
+                        data.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
                         state.vehicles = data;
                         localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(data));
                         
@@ -744,15 +743,6 @@
                 }
             } catch (err) {
                 console.warn("Background fetch fallback:", err);
-            }
-        }
-
-        function getLocalStorageVehicles() {
-            try {
-                const local = localStorage.getItem('atlas_vehicles_db_v1');
-                state.vehicles = local ? JSON.parse(local) : DUMMY_DATA;
-            } catch(e) {
-                state.vehicles = DUMMY_DATA;
             }
         }
 
@@ -768,8 +758,9 @@
                     const index = state.vehicles.findIndex(v => String(v.id) === String(car.id));
                     if (index > -1) state.vehicles[index] = car;
                     else state.vehicles.unshift(car);
-                    localStorage.setItem('atlas_vehicles_db_v1', JSON.stringify(state.vehicles));
+                    localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(state.vehicles));
                 }
+                
                 localStorage.removeItem('atlas_vehicles_cache_v3');
                 await fetchVehicles();
                 return true;
@@ -786,7 +777,7 @@
                     await supabaseClient.from('atlas_vehicles').delete().eq('id', id);
                 } else {
                     state.vehicles = state.vehicles.filter(v => String(v.id) !== String(id));
-                    localStorage.setItem('atlas_vehicles_db_v1', JSON.stringify(state.vehicles));
+                    localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(state.vehicles));
                 }
                 localStorage.removeItem('atlas_vehicles_cache_v3');
                 await fetchVehicles();
@@ -846,7 +837,7 @@
             renderCatalog();
         }
 
-        // ================= INFINITE SCROLL / RENDER MORE =================
+        // ================= INFINITE SCROLL =================
         function handleCatalogScroll() {
             const area = document.getElementById('catalog-scroll-area');
             if(!area) return;
@@ -858,7 +849,7 @@
             }
         }
 
-        // ================= ⚡ LIGHTWEIGHT CATALOG RENDERER ⚡ =================
+        // ================= CATALOG RENDERER =================
         function renderCatalog() {
             const grid = document.getElementById('carsGrid');
             if(!grid) return;
@@ -895,7 +886,6 @@
                 return;
             }
 
-            // Slice array for Chunked DOM rendering (Max Speed)
             const visibleCars = filtered.slice(0, state.renderLimit);
 
             visibleCars.forEach(car => {
@@ -914,7 +904,6 @@
 
                 const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"];
 
-                // ⚡ LIGHTWEIGHT DOM INJECTION: RENDER IMAGE[0] ONLY FIRST ⚡
                 let initialImageHTML = `
                     <div class="snap-center-item w-full h-full shrink-0 relative">
                         <img src="${carImages[0]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
@@ -959,7 +948,6 @@
             });
         }
 
-        // ⚡ LAZY POPULATE IMAGES 2..N ON TOUCH/HOVER ⚡
         function loadCarSecondaryImages(carId) {
             if(loadedCarSwipers[carId]) return;
             const track = document.getElementById(`card-swiper-${carId}`);
@@ -1185,7 +1173,7 @@
             container.innerHTML = '';
             container.classList.remove('hidden');
             
-            document.getElementById('f-image-label').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> جاري ضغط ومعالجة ${maxImages} صور بسرعة فائقة...`;
+            document.getElementById('f-image-label').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> جاري معالجة الضغط لـ ${maxImages} صور...`;
 
             for(let i=0; i<maxImages; i++) {
                 const b64 = await compressToSquare(files[i]);
@@ -1195,7 +1183,7 @@
             document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور مضغوطة بسرعة فائقة`;
         }
 
-        // ⚡ ULTRA SMART HIGH-SPEED COMPRESSION (500x500 @ 0.52 QUALITY -> ~15KB EACH) ⚡
+        // ⚡ HIGH-SPEED SMART COMPRESSION (500x500 @ 0.52 QUALITY -> ~15KB EACH) ⚡
         function compressToSquare(file) {
             return new Promise(resolve => {
                 const reader = new FileReader();
