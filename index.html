@@ -622,7 +622,7 @@
     </div>
 
     <!-- ======================================================= -->
-    <!-- 🛑 SUPABASE ENGINE INTEGRATION (ATLAS MOTORS TABLE) 🛑   -->
+    <!-- 🛑 SUPABASE ENGINE INTEGRATION 🛑                       -->
     <!-- ======================================================= -->
     <script>
         const SUPABASE_URL = 'https://smumscrjovrsudhsaczy.supabase.co'; 
@@ -698,9 +698,9 @@
             renderCatalog();
         }
 
-        // ================= ⚡ INSTANT CACHE-FIRST FETCH ⚡ =================
+        // ================= ⚡ INSTANT CACHE-FIRST FETCH (PRESERVES ALL PREVIOUS CARS) ⚡ =================
         async function fetchVehicles() {
-            // 🟢 STEP 1: LOAD INSTANTLY FROM LOCAL STORAGE CACHES (PRESERVES PREVIOUS CARS) 🟢
+            // 🟢 STEP 1: LOAD INSTANTLY FROM LOCAL STORAGE CACHES (0ms) 🟢
             const cachedData = localStorage.getItem('atlas_vehicles_cache_v3') || 
                                localStorage.getItem('atlas_vehicles_cache_v2') || 
                                localStorage.getItem('atlas_vehicles_db_v1');
@@ -716,12 +716,11 @@
                 }
             }
 
-            // 🟢 STEP 2: SILENT BACKGROUND SYNC FROM SUPABASE SAFE QUERY 🟢
+            // 🟢 STEP 2: SILENT BACKGROUND SYNC FROM SUPABASE 🟢
             try {
                 if (supabaseClient) {
                     const { data, error } = await supabaseClient.from('atlas_vehicles').select('*');
                     if (!error && Array.isArray(data) && data.length > 0) {
-                        // Safe Local Sorting without requiring specific SQL column index
                         data.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
                         state.vehicles = data;
                         localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(data));
@@ -839,7 +838,7 @@
             }
         }
 
-        // ================= ⚡ LIGHTWEIGHT CATALOG RENDERER ⚡ =================
+        // ================= CATALOG RENDERER =================
         function renderCatalog() {
             const grid = document.getElementById('carsGrid');
             if(!grid) return;
@@ -892,10 +891,8 @@
                     tagText = 'معرض + بالطلب';
                 }
 
-                // Handle single image fallback or array of images
                 const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
 
-                // ⚡ LIGHTWEIGHT DOM INJECTION: RENDER IMAGE[0] ONLY FIRST ⚡
                 let initialImageHTML = `
                     <div class="snap-center-item w-full h-full shrink-0 relative">
                         <img src="${carImages[0]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
@@ -940,7 +937,6 @@
             });
         }
 
-        // ⚡ LAZY POPULATE IMAGES 2..N ON TOUCH/HOVER ⚡
         function loadCarSecondaryImages(carId) {
             if(loadedCarSwipers[carId]) return;
             const track = document.getElementById(`card-swiper-${carId}`);
@@ -1179,7 +1175,6 @@
             document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور مضغوطة بسرعة فائقة`;
         }
 
-        // ⚡ COMPRESSION FOR NEW UPLOADS (480x480 @ 0.48) ⚡
         function compressToSquare(file) {
             return new Promise(resolve => {
                 const reader = new FileReader();
