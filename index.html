@@ -4,17 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ATLAS MOTORS | النخبة في عالم السيارات</title>
-    
-    <!-- ======================================================= -->
-    <!-- 🛑 1. TIKTOK PIXEL / META PIXEL PLACEHOLDER (HEAD) 🛑 -->
-    <!-- ======================================================= -->
-    <script>
-        // Example: !function(f,b,e,v,n,t,s) { ... fbq('init', 'YOUR_PIXEL_ID'); fbq('track', 'PageView'); }
-    </script>
 
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script>
@@ -34,7 +25,7 @@
                     animation: {
                         'glow-pulse': 'glowPulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'float-slow': 'floatSlow 3.5s ease-in-out infinite',
-                        'slide-up': 'slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'slide-up': 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
                         'pulse-red': 'pulseRed 2s infinite',
                         'shimmer': 'shimmer 2.5s infinite linear',
                         'breathing-glow': 'breathingGlow 4s ease-in-out infinite alternate',
@@ -225,7 +216,6 @@
             
             <div class="relative z-10 flex flex-col items-center animate-slide-up-fade text-center px-4 w-full my-auto">
                 <div class="text-center space-y-4 my-auto">
-                    
                     <div class="relative inline-block mb-2 group">
                         <div class="absolute -inset-2 bg-gradient-to-r from-laserorange/40 via-orangeglow/60 to-laserorange/40 rounded-3xl blur-xl opacity-70 animate-pulse"></div>
                         <div class="inline-flex items-center justify-center w-20 h-20 md:w-24 md:h-24 rounded-3xl bg-gradient-to-br from-laserorange to-orange-900 shadow-[0_0_30px_rgba(255,85,0,0.6)] relative z-10 animate-float-slow">
@@ -322,7 +312,7 @@
                 </button>
             </header>
 
-            <!-- SCROLLABLE CARS AREA ONLY -->
+            <!-- SCROLLABLE CARS AREA -->
             <div id="catalog-scroll-area" class="flex-1 overflow-y-auto hide-scrollbar p-4 pb-36 relative z-10" onscroll="handleCatalogScroll()">
                 
                 <!-- 🔗 SOCIAL LINKS 🔗 -->
@@ -378,7 +368,6 @@
             <div class="absolute inset-0 bg-black/90 backdrop-blur-sm" onclick="closeDetailModal()"></div>
             <div class="relative w-full max-w-[520px] lg:max-w-[800px] mx-auto h-[92vh] bg-metalic border-t border-white/10 rounded-t-[32px] flex flex-col transition-transform duration-500 translate-y-full" id="carDetailSheet">
                 
-                <!-- NEON GLOW CLOSE BUTTON -->
                 <div class="absolute top-7 left-5 z-[70]">
                     <button onclick="closeDetailModal()" class="w-9 h-9 rounded-full bg-black/90 border border-laserorange/60 text-white flex items-center justify-center hover:bg-laserorange hover:text-white transition-all cursor-pointer shadow-[0_0_15px_rgba(255,85,0,0.5)] active:scale-90">
                         <i class="fa-solid fa-xmark text-sm"></i>
@@ -395,9 +384,7 @@
                             <i class="fa-solid fa-chevron-right text-xs"></i>
                         </button>
 
-                        <div id="modal-image-swiper" class="w-full h-full overflow-x-scroll flex snap-x snap-mandatory scroll-smooth hide-scrollbar touch-pan-x" onscroll="syncSwiperImageCounter()">
-                            <!-- Images loaded dynamically -->
-                        </div>
+                        <div id="modal-image-swiper" class="w-full h-full overflow-x-scroll flex snap-x snap-mandatory scroll-smooth hide-scrollbar touch-pan-x" onscroll="syncSwiperImageCounter()"></div>
 
                         <div class="absolute bottom-0 w-full h-20 bg-gradient-to-t from-metalic via-metalic/40 to-transparent pointer-events-none z-10"></div>
                         
@@ -711,27 +698,30 @@
             renderCatalog();
         }
 
-        // ================= ⚡ INSTANT SMART CACHE & SUPABASE SYNC ⚡ =================
+        // ================= ⚡ INSTANT CACHE-FIRST FETCH ⚡ =================
         async function fetchVehicles() {
-            // 🟢 STEP 1: LOAD FROM LOCAL STORAGE CACHES (PRESERVES PREVIOUS CARS) 🟢
+            // 🟢 STEP 1: LOAD INSTANTLY FROM LOCAL STORAGE CACHES (PRESERVES PREVIOUS CARS) 🟢
             const cachedData = localStorage.getItem('atlas_vehicles_cache_v3') || 
                                localStorage.getItem('atlas_vehicles_cache_v2') || 
                                localStorage.getItem('atlas_vehicles_db_v1');
             if (cachedData) {
                 try {
-                    state.vehicles = JSON.parse(cachedData);
-                    renderCatalog();
+                    const parsed = JSON.parse(cachedData);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        state.vehicles = parsed;
+                        renderCatalog();
+                    }
                 } catch (e) {
-                    state.vehicles = [];
+                    console.warn("Cache parse err", e);
                 }
             }
 
-            // 🟢 STEP 2: FETCH FRESH DATA FROM SUPABASE SAFELY WITHOUT CRASHING 🟢
+            // 🟢 STEP 2: SILENT BACKGROUND SYNC FROM SUPABASE SAFE QUERY 🟢
             try {
                 if (supabaseClient) {
                     const { data, error } = await supabaseClient.from('atlas_vehicles').select('*');
                     if (!error && Array.isArray(data) && data.length > 0) {
-                        // Safe Local Sorting by Date/ID in JavaScript
+                        // Safe Local Sorting without requiring specific SQL column index
                         data.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
                         state.vehicles = data;
                         localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(data));
@@ -794,7 +784,7 @@
             await saveVehicleToDb(car);
         }
 
-        // ================= 🏷️ BRAND FILTER CHIPS 🏷️ =================
+        // ================= 🏷️ BRAND FILTER CHIPS RENDERER 🏷️ =================
         function renderBrandFilters() {
             const container = document.getElementById('brandFilterContainer');
             if(!container) return;
@@ -849,7 +839,7 @@
             }
         }
 
-        // ================= CATALOG RENDERER =================
+        // ================= ⚡ LIGHTWEIGHT CATALOG RENDERER ⚡ =================
         function renderCatalog() {
             const grid = document.getElementById('carsGrid');
             if(!grid) return;
@@ -902,8 +892,10 @@
                     tagText = 'معرض + بالطلب';
                 }
 
-                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"];
+                // Handle single image fallback or array of images
+                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
 
+                // ⚡ LIGHTWEIGHT DOM INJECTION: RENDER IMAGE[0] ONLY FIRST ⚡
                 let initialImageHTML = `
                     <div class="snap-center-item w-full h-full shrink-0 relative">
                         <img src="${carImages[0]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
@@ -948,18 +940,22 @@
             });
         }
 
+        // ⚡ LAZY POPULATE IMAGES 2..N ON TOUCH/HOVER ⚡
         function loadCarSecondaryImages(carId) {
             if(loadedCarSwipers[carId]) return;
             const track = document.getElementById(`card-swiper-${carId}`);
             const car = state.vehicles.find(v => v && String(v.id) === String(carId));
-            if(!track || !car || !Array.isArray(car.images) || car.images.length <= 1) return;
+            if(!track || !car) return;
+
+            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : []);
+            if(carImages.length <= 1) return;
 
             loadedCarSwipers[carId] = true;
-            for(let i = 1; i < car.images.length; i++) {
+            for(let i = 1; i < carImages.length; i++) {
                 const imgDiv = document.createElement('div');
                 imgDiv.className = 'snap-center-item w-full h-full shrink-0 relative';
                 imgDiv.innerHTML = `
-                    <img src="${car.images[i]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
+                    <img src="${carImages[i]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
                 `;
                 track.appendChild(imgDiv);
@@ -1015,7 +1011,7 @@
             const car = state.vehicles.find(v => v && String(v.id) === String(id));
             if(!car) return;
 
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"];
+            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
 
             const swiper = document.getElementById('modal-image-swiper');
             swiper.innerHTML = carImages.map((img, idx) => `
@@ -1183,7 +1179,7 @@
             document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور مضغوطة بسرعة فائقة`;
         }
 
-        // ⚡ HIGH-SPEED SMART COMPRESSION (500x500 @ 0.52 QUALITY -> ~15KB EACH) ⚡
+        // ⚡ COMPRESSION FOR NEW UPLOADS (480x480 @ 0.48) ⚡
         function compressToSquare(file) {
             return new Promise(resolve => {
                 const reader = new FileReader();
@@ -1196,9 +1192,9 @@
                         const startX = (img.width - size) / 2;
                         const startY = (img.height - size) / 2;
                         
-                        canvas.width = 500; canvas.height = 500;
-                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 500, 500);
-                        resolve(canvas.toDataURL('image/jpeg', 0.52));
+                        canvas.width = 480; canvas.height = 480;
+                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 480, 480);
+                        resolve(canvas.toDataURL('image/jpeg', 0.48));
                     };
                     img.src = e.target.result;
                 };
@@ -1214,7 +1210,7 @@
 
             const carId = document.getElementById('form-car-id').value || `car_${Date.now()}`;
             const existingCar = state.vehicles.find(v => v && String(v.id) === String(carId));
-            const finalImages = state.tempImages.length > 0 ? state.tempImages : (existingCar ? existingCar.images : []);
+            const finalImages = state.tempImages.length > 0 ? state.tempImages : (existingCar ? (existingCar.images || [existingCar.image]) : []);
 
             if(!finalImages || finalImages.length === 0) {
                 alert("يرجى إرفاق صورة واحدة على الأقل.");
@@ -1264,7 +1260,7 @@
             
             state.tempImages = [];
             const container = document.getElementById('multi-img-preview-container');
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : [];
+            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : []);
             container.innerHTML = carImages.map(img => `<img src="${img}" class="w-16 h-16 object-cover rounded-lg border border-white/20">`).join('');
             container.classList.remove('hidden');
             document.getElementById('f-image-label').innerText = "(اضغط لتغيير الصور)";
@@ -1291,7 +1287,7 @@
             state.vehicles.forEach(car => {
                 if(!car) return;
                 const isSold = car.status === 'vendu';
-                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50";
+                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : (car.image || "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50");
 
                 list.innerHTML += `
                 <div class="glass-panel border ${isSold ? 'border-red-600 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'border-white/10'} p-3 rounded-2xl flex flex-col gap-3 transition-all" dir="ltr">
