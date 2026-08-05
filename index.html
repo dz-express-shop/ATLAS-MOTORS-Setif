@@ -641,9 +641,6 @@
             }
         }
         
-        // =========================================================
-        // ⚙️ ضع جميع روابطك ورقم الهاتف هنا بسهولة ⚙️
-        // =========================================================
         const CONFIG = {
             whatsappNumber: "213551331144",
             facebookUrl: "https://www.facebook.com/share/1DU5LhwaHb/",
@@ -666,7 +663,7 @@
                 id: "id_1", marque: "TOYOTA", modele: "Hilux Revo", prix: "895M", annee: "2024", km: "0 km", 
                 typeCategory: "both", moteur: "2.8 D-4D", boite: "Auto", couleur: "Blanc Nacre",
                 desc: "Full option. Livraison immediate.", 
-                images: ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58"], 
+                images: ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=52"], 
                 status: "disponible", createdAt: Date.now() 
             }
         ];
@@ -707,24 +704,37 @@
             navigateTo('page-3');
         }
 
-        // ================= DATABASE (CONNECTED TO ATLAS_VEHICLES) =================
+        // ================= ⚡ DATABASE ENGINE WITH INSTANT CACHE-FIRST ⚡ =================
         async function fetchVehicles() {
+            // 🟢 STEP 1: LOAD INSTANTLY FROM LOCAL STORAGE CACHE (0 MILLISECONDS) 🟢
+            const cachedData = localStorage.getItem('atlas_vehicles_cache_v2');
+            if (cachedData) {
+                try {
+                    state.vehicles = JSON.parse(cachedData);
+                    renderCatalog();
+                } catch (e) {
+                    getLocalStorageVehicles();
+                }
+            } else {
+                getLocalStorageVehicles();
+            }
+
+            // 🟢 STEP 2: FETCH FRESH DATA FROM SUPABASE IN BACKGROUND SILENTLY 🟢
             try {
                 if (supabaseClient) {
                     const { data, error } = await supabaseClient.from('atlas_vehicles').select('*').order('created_at', { ascending: false });
-                    if (error) throw error;
-                    state.vehicles = data || [];
-                } else {
-                    getLocalStorageVehicles();
+                    if (!error && data) {
+                        state.vehicles = data;
+                        localStorage.setItem('atlas_vehicles_cache_v2', JSON.stringify(data));
+                        
+                        const page3 = document.getElementById('page-3');
+                        if(page3 && page3.classList.contains('active')) renderCatalog();
+                        if(state.isOwnerSession) renderAdminInventory();
+                    }
                 }
             } catch (err) {
-                console.warn("Using local fallback:", err);
-                getLocalStorageVehicles();
+                console.warn("Background fetch silent fallback:", err);
             }
-            
-            const page3 = document.getElementById('page-3');
-            if(page3 && page3.classList.contains('active')) renderCatalog();
-            if(state.isOwnerSession) renderAdminInventory();
         }
 
         function getLocalStorageVehicles() {
@@ -750,6 +760,9 @@
                     else state.vehicles.unshift(car);
                     localStorage.setItem('atlas_vehicles_db_v1', JSON.stringify(state.vehicles));
                 }
+                
+                // Clear cache to force refresh on new vehicle save
+                localStorage.removeItem('atlas_vehicles_cache_v2');
                 await fetchVehicles();
                 return true;
             } catch (err) {
@@ -767,6 +780,7 @@
                     state.vehicles = state.vehicles.filter(v => String(v.id) !== String(id));
                     localStorage.setItem('atlas_vehicles_db_v1', JSON.stringify(state.vehicles));
                 }
+                localStorage.removeItem('atlas_vehicles_cache_v2');
                 await fetchVehicles();
                 showToast("تم الحذف بنجاح");
             } catch (err) {
@@ -873,12 +887,12 @@
                     tagText = 'معرض + بالطلب';
                 }
 
-                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58"];
+                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=52"];
 
-                // ⚡ OPTIMIZED LAZY LOADING & ASYNC DECODING FOR CARDS ⚡
+                // ⚡ ULTRA FAST LAZY DECODING & LIGHTWEIGHT IMAGES ⚡
                 let imagesHTML = carImages.map((img, idx) => `
                     <div class="snap-center-item w-full h-full shrink-0 relative">
-                        <img src="${img}" loading="${idx === 0 ? 'eager' : 'lazy'}" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58'">
+                        <img src="${img}" loading="${idx === 0 ? 'eager' : 'lazy'}" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=52'">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
                     </div>
                 `).join('');
@@ -968,7 +982,7 @@
             const car = state.vehicles.find(v => v && String(v.id) === String(id));
             if(!car) return;
 
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58"];
+            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=52"];
 
             const swiper = document.getElementById('modal-image-swiper');
             swiper.innerHTML = carImages.map((img, idx) => `
@@ -1091,7 +1105,6 @@
             document.getElementById('pinInput').value = '';
         }
         
-        // 🟢 PASSWORD CHECK: Atlas16 🟢
         function handlePinSubmission() {
             const input = document.getElementById('pinInput');
             if (input.value === "Atlas16") {
@@ -1127,7 +1140,7 @@
             container.innerHTML = '';
             container.classList.remove('hidden');
             
-            document.getElementById('f-image-label').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> جاري معالجة ${maxImages} صور وسرعة الضغط...`;
+            document.getElementById('f-image-label').innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> جاري ضغط ومعالجة ${maxImages} صور بسرعة فائقة...`;
 
             for(let i=0; i<maxImages; i++) {
                 const b64 = await compressToSquare(files[i]);
@@ -1137,7 +1150,7 @@
             document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور مضغوطة بسرعة فائقة`;
         }
 
-        // ⚡ OPTIMIZED HIGH-SPEED COMPRESSION (600x600 @ 0.58) ⚡
+        // ⚡ ULTRA SMART HIGH-SPEED COMPRESSION (500x500 @ 0.52 QUALITY -> ~15KB EACH) ⚡
         function compressToSquare(file) {
             return new Promise(resolve => {
                 const reader = new FileReader();
@@ -1150,9 +1163,9 @@
                         const startX = (img.width - size) / 2;
                         const startY = (img.height - size) / 2;
                         
-                        canvas.width = 600; canvas.height = 600;
-                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 600, 600);
-                        resolve(canvas.toDataURL('image/jpeg', 0.58));
+                        canvas.width = 500; canvas.height = 500;
+                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 500, 500);
+                        resolve(canvas.toDataURL('image/jpeg', 0.52));
                     };
                     img.src = e.target.result;
                 };
@@ -1245,7 +1258,7 @@
             state.vehicles.forEach(car => {
                 if(!car) return;
                 const isSold = car.status === 'vendu';
-                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=58";
+                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=52";
 
                 list.innerHTML += `
                 <div class="glass-panel border ${isSold ? 'border-red-600 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'border-white/10'} p-3 rounded-2xl flex flex-col gap-3 transition-all" dir="ltr">
