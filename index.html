@@ -652,11 +652,14 @@
             selectedBrand: 'all',
             isOwnerSession: localStorage.getItem('isOwnerVerified') === 'true',
             tempImages: [],
-            renderLimit: 6
+            fetchedRangeStart: 0,
+            pageSize: 6,
+            hasMore: true,
+            isLoading: false
         };
 
         let autoCarousels = {};
-        let loadedCarSwipers = {};
+        let intersectionObserver = null;
 
         function applySocialConfig() {
             if(document.getElementById('link-fb')) document.getElementById('link-fb').href = CONFIG.facebookUrl;
@@ -685,7 +688,6 @@
         function enterCatalog(scope) {
             state.currentScope = scope;
             state.selectedBrand = 'all';
-            state.renderLimit = 6;
             const sub = document.getElementById('header-subtitle');
             if(sub) sub.innerText = scope === 'disponible' ? "متوفرة في المعرض" : "استيراد حسب الطلب";
             const searchEl = document.getElementById('searchInput');
@@ -694,44 +696,65 @@
         }
 
         function resetRenderLimitAndRender() {
-            state.renderLimit = 6;
             renderCatalog();
         }
 
-        // ================= ⚡ INSTANT CACHE-FIRST FETCH (PRESERVES ALL PREVIOUS CARS) ⚡ =================
-        async function fetchVehicles() {
-            // 🟢 STEP 1: LOAD INSTANTLY FROM LOCAL STORAGE CACHES (0ms) 🟢
-            const cachedData = localStorage.getItem('atlas_vehicles_cache_v3') || 
-                               localStorage.getItem('atlas_vehicles_cache_v2') || 
-                               localStorage.getItem('atlas_vehicles_db_v1');
-            if (cachedData) {
-                try {
-                    const parsed = JSON.parse(cachedData);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                        state.vehicles = parsed;
-                        renderCatalog();
-                    }
-                } catch (e) {
-                    console.warn("Cache parse err", e);
+        // ================= ⚡ PRO RANGE PAGINATION FETCH (NO CRASH ON MULTI-USER) ⚡ =================
+        async function fetchVehicles(loadMore = false) {
+            if(state.isLoading) return;
+            state.isLoading = true;
+
+            // 🟢 STEP 1: LOAD FROM LOCAL CACHE FIRST (0ms WAIT) 🟢
+            if (!loadMore) {
+                const cachedData = localStorage.getItem('atlas_vehicles_cache_v4');
+                if (cachedData) {
+                    try {
+                        const parsed = JSON.parse(cachedData);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            state.vehicles = parsed;
+                            renderCatalog();
+                        }
+                    } catch (e) {}
                 }
             }
 
-            // 🟢 STEP 2: SILENT BACKGROUND SYNC FROM SUPABASE 🟢
+            // 🟢 STEP 2: FETCH PAGINATED BATCH FROM SUPABASE RANGE (PREVENTS RATE LIMIT & FREEZE) 🟢
             try {
                 if (supabaseClient) {
-                    const { data, error } = await supabaseClient.from('atlas_vehicles').select('*');
-                    if (!error && Array.isArray(data) && data.length > 0) {
-                        data.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
-                        state.vehicles = data;
-                        localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(data));
+                    const start = loadMore ? state.vehicles.length : 0;
+                    const end = start + state.pageSize - 1;
+
+                    const { data, error } = await supabaseClient
+                        .from('atlas_vehicles')
+                        .select('*')
+                        .range(start, end);
+
+                    if (!error && Array.isArray(data)) {
+                        if (loadMore) {
+                            // Append new unique items
+                            const existingIds = new Set(state.vehicles.map(v => String(v.id)));
+                            const newItems = data.filter(v => !existingIds.has(String(v.id)));
+                            state.vehicles = [...state.vehicles, ...newItems];
+                        } else if (data.length > 0) {
+                            state.vehicles = data;
+                        }
+
+                        if (data.length < state.pageSize) {
+                            state.hasMore = false;
+                        }
+
+                        // Local sort
+                        state.vehicles.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
+                        localStorage.setItem('atlas_vehicles_cache_v4', JSON.stringify(state.vehicles));
                         
-                        const page3 = document.getElementById('page-3');
-                        if(page3 && page3.classList.contains('active')) renderCatalog();
+                        renderCatalog();
                         if(state.isOwnerSession) renderAdminInventory();
                     }
                 }
             } catch (err) {
-                console.warn("Background fetch fallback:", err);
+                console.warn("Supabase fetch error:", err);
+            } finally {
+                state.isLoading = false;
             }
         }
 
@@ -747,11 +770,11 @@
                     const index = state.vehicles.findIndex(v => String(v.id) === String(car.id));
                     if (index > -1) state.vehicles[index] = car;
                     else state.vehicles.unshift(car);
-                    localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(state.vehicles));
+                    localStorage.setItem('atlas_vehicles_cache_v4', JSON.stringify(state.vehicles));
                 }
                 
-                localStorage.removeItem('atlas_vehicles_cache_v3');
-                await fetchVehicles();
+                localStorage.removeItem('atlas_vehicles_cache_v4');
+                await fetchVehicles(false);
                 return true;
             } catch (err) {
                 alert("حدث خطأ غير متوقع: " + err.message);
@@ -766,10 +789,10 @@
                     await supabaseClient.from('atlas_vehicles').delete().eq('id', id);
                 } else {
                     state.vehicles = state.vehicles.filter(v => String(v.id) !== String(id));
-                    localStorage.setItem('atlas_vehicles_cache_v3', JSON.stringify(state.vehicles));
+                    localStorage.setItem('atlas_vehicles_cache_v4', JSON.stringify(state.vehicles));
                 }
-                localStorage.removeItem('atlas_vehicles_cache_v3');
-                await fetchVehicles();
+                localStorage.removeItem('atlas_vehicles_cache_v4');
+                await fetchVehicles(false);
                 showToast("تم الحذف بنجاح");
             } catch (err) {
                 console.error("Delete Error:", err);
@@ -821,21 +844,39 @@
 
         function selectBrandFilter(brand) {
             state.selectedBrand = brand;
-            state.renderLimit = 6;
             renderBrandFilters();
             renderCatalog();
         }
 
-        // ================= INFINITE SCROLL =================
+        // ================= INFINITE SCROLL LISTENER =================
         function handleCatalogScroll() {
             const area = document.getElementById('catalog-scroll-area');
             if(!area) return;
-            if(area.scrollTop + area.clientHeight >= area.scrollHeight - 300) {
-                if (state.renderLimit < state.vehicles.length) {
-                    state.renderLimit += 6;
-                    renderCatalog();
+            if(area.scrollTop + area.clientHeight >= area.scrollHeight - 250) {
+                if(state.hasMore && !state.isLoading) {
+                    fetchVehicles(true);
                 }
             }
+        }
+
+        // ================= ⚡ INTERSECTION OBSERVER LAZY LOADER ⚡ =================
+        function initIntersectionObserver() {
+            if (intersectionObserver) intersectionObserver.disconnect();
+            
+            intersectionObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        if (img.dataset.src) {
+                            img.src = img.dataset.src;
+                            img.removeAttribute('data-src');
+                        }
+                        observer.unobserve(img);
+                    }
+                });
+            }, { rootMargin: '200px 0px' });
+
+            document.querySelectorAll('img[data-src]').forEach(img => intersectionObserver.observe(img));
         }
 
         // ================= CATALOG RENDERER =================
@@ -845,7 +886,6 @@
 
             Object.keys(autoCarousels).forEach(key => clearInterval(autoCarousels[key]));
             autoCarousels = {};
-            loadedCarSwipers = {};
 
             renderBrandFilters();
             
@@ -875,9 +915,7 @@
                 return;
             }
 
-            const visibleCars = filtered.slice(0, state.renderLimit);
-
-            visibleCars.forEach(car => {
+            filtered.forEach(car => {
                 if(!car) return;
                 const isSold = car.status === 'vendu';
                 
@@ -893,9 +931,10 @@
 
                 const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
 
+                // ⚡ INTERSECTION OBSERVER DATA-SRC (ZERO RAM OVERLOAD) ⚡
                 let initialImageHTML = `
                     <div class="snap-center-item w-full h-full shrink-0 relative">
-                        <img src="${carImages[0]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
+                        <img data-src="${carImages[0]}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" class="w-full h-full object-cover transition-opacity duration-300" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
                     </div>
                 `;
@@ -932,21 +971,22 @@
                 </div>`;
 
                 if (carImages.length > 1) {
-                    setTimeout(() => startAutoCarousel(car.id), 1200);
+                    setTimeout(() => startAutoCarousel(car.id), 1500);
                 }
             });
+
+            // Activate IntersectionObserver for Images
+            initIntersectionObserver();
         }
 
         function loadCarSecondaryImages(carId) {
-            if(loadedCarSwipers[carId]) return;
             const track = document.getElementById(`card-swiper-${carId}`);
             const car = state.vehicles.find(v => v && String(v.id) === String(carId));
             if(!track || !car) return;
 
             const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : []);
-            if(carImages.length <= 1) return;
+            if(carImages.length <= 1 || track.children.length > 1) return;
 
-            loadedCarSwipers[carId] = true;
             for(let i = 1; i < carImages.length; i++) {
                 const imgDiv = document.createElement('div');
                 imgDiv.className = 'snap-center-item w-full h-full shrink-0 relative';
@@ -1175,6 +1215,7 @@
             document.getElementById('f-image-label').innerText = `تمت جاهزية ${state.tempImages.length} صور مضغوطة بسرعة فائقة`;
         }
 
+        // ⚡ PRO HIGH-SPEED LIGHTWEIGHT COMPRESSOR (450x450 @ 0.45) ⚡
         function compressToSquare(file) {
             return new Promise(resolve => {
                 const reader = new FileReader();
@@ -1187,9 +1228,9 @@
                         const startX = (img.width - size) / 2;
                         const startY = (img.height - size) / 2;
                         
-                        canvas.width = 480; canvas.height = 480;
-                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 480, 480);
-                        resolve(canvas.toDataURL('image/jpeg', 0.48));
+                        canvas.width = 450; canvas.height = 450;
+                        ctx.drawImage(img, startX, startY, size, size, 0, 0, 450, 450);
+                        resolve(canvas.toDataURL('image/jpeg', 0.45));
                     };
                     img.src = e.target.result;
                 };
@@ -1333,7 +1374,7 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             applySocialConfig();
-            fetchVehicles();
+            fetchVehicles(false);
         });
     </script>
 </body>
