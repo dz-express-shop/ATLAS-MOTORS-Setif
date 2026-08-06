@@ -25,7 +25,7 @@
                     animation: {
                         'glow-pulse': 'glowPulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'float-slow': 'floatSlow 3.5s ease-in-out infinite',
-                        'slide-up': 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'slide-up': 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
                         'pulse-red': 'pulseRed 2s infinite',
                         'shimmer': 'shimmer 2.5s infinite linear',
                         'breathing-glow': 'breathingGlow 4s ease-in-out infinite alternate',
@@ -196,12 +196,6 @@
         .admin-input:focus {
             outline: none; border-color: #FF5500; box-shadow: 0 0 15px rgba(255,85,0,0.2); background: #0f0f18;
         }
-
-        .skeleton-card {
-            background: linear-gradient(90deg, #111116 25%, #1a1a22 50%, #111116 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
-        }
     </style>
 </head>
 <body class="antialiased selection:bg-laserorange selection:text-white">
@@ -313,7 +307,7 @@
             </header>
 
             <!-- SCROLLABLE CARS AREA -->
-            <div id="catalog-scroll-area" class="flex-1 overflow-y-auto hide-scrollbar p-4 pb-36 relative z-10" onscroll="handleCatalogScroll()">
+            <div id="catalog-scroll-area" class="flex-1 overflow-y-auto hide-scrollbar p-4 pb-36 relative z-10">
                 
                 <!-- 🔗 SOCIAL LINKS 🔗 -->
                 <div class="relative z-50 flex justify-center gap-3 mb-4" dir="ltr">
@@ -334,15 +328,14 @@
                 <!-- SEARCH BAR -->
                 <div class="relative mb-3 max-w-lg mx-auto w-full z-20">
                     <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs"></i>
-                    <input type="text" id="searchInput" oninput="resetRenderLimitAndRender()" placeholder="ابحث عن ماركة، موديل..." class="w-full bg-cardgray border border-white/10 rounded-2xl pl-10 pr-4 py-3.5 text-[11px] font-bold text-white focus:outline-none focus:border-laserorange transition-colors shadow-inner">
+                    <input type="text" id="searchInput" oninput="renderCatalog()" placeholder="ابحث عن ماركة، موديل..." class="w-full bg-cardgray border border-white/10 rounded-2xl pl-10 pr-4 py-3.5 text-[11px] font-bold text-white focus:outline-none focus:border-laserorange transition-colors shadow-inner">
                 </div>
 
                 <!-- 🏷️ BRAND FILTER CHIPS BAR 🏷️ -->
                 <div id="brandFilterContainer" class="flex items-center gap-2 overflow-x-auto hide-scrollbar mb-5 max-w-lg mx-auto w-full z-20 py-1" dir="ltr"></div>
 
                 <div id="carsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto w-full relative z-20">
-                    <div class="w-full aspect-square rounded-[24px] skeleton-card border border-white/5"></div>
-                    <div class="w-full aspect-square rounded-[24px] skeleton-card border border-white/5"></div>
+                    <!-- Skeletons will appear here initially -->
                 </div>
             </div>
 
@@ -622,7 +615,7 @@
     </div>
 
     <!-- ======================================================= -->
-    <!-- 🛑 SUPABASE ENGINE INTEGRATION 🛑                       -->
+    <!-- 🛑 SUPABASE ULTIMATE ENGINE (DATA-DEFERRED & LAZY) 🛑  -->
     <!-- ======================================================= -->
     <script>
         const SUPABASE_URL = 'https://smumscrjovrsudhsaczy.supabase.co'; 
@@ -646,20 +639,18 @@
             googleScriptUrl: localStorage.getItem('atlas_google_script') || ""
         };
 
+        // ⚡ STATE MANAGEMENT ⚡
         let state = {
             vehicles: [],
+            imageCache: {}, // 🛑 Images stored in RAM ONLY to bypass LocalStorage limits
             currentScope: 'all', 
             selectedBrand: 'all',
             isOwnerSession: localStorage.getItem('isOwnerVerified') === 'true',
-            tempImages: [],
-            fetchedRangeStart: 0,
-            pageSize: 6,
-            hasMore: true,
-            isLoading: false
+            tempImages: []
         };
 
         let autoCarousels = {};
-        let intersectionObserver = null;
+        let imgObserver = null;
 
         function applySocialConfig() {
             if(document.getElementById('link-fb')) document.getElementById('link-fb').href = CONFIG.facebookUrl;
@@ -674,13 +665,10 @@
                 p.classList.remove('active');
                 p.style.display = 'none';
             });
-            
             const target = document.getElementById(pageId);
             if(target) {
                 target.style.display = 'flex';
-                setTimeout(() => {
-                    target.classList.add('active');
-                }, 10);
+                setTimeout(() => target.classList.add('active'), 10);
             }
             if(pageId === 'page-3') renderCatalog();
         }
@@ -699,184 +687,89 @@
             renderCatalog();
         }
 
-        // ================= ⚡ PRO RANGE PAGINATION FETCH (NO CRASH ON MULTI-USER) ⚡ =================
-        async function fetchVehicles(loadMore = false) {
-            if(state.isLoading) return;
-            state.isLoading = true;
-
-            // 🟢 STEP 1: LOAD FROM LOCAL CACHE FIRST (0ms WAIT) 🟢
-            if (!loadMore) {
-                const cachedData = localStorage.getItem('atlas_vehicles_cache_v4');
-                if (cachedData) {
-                    try {
-                        const parsed = JSON.parse(cachedData);
-                        if (Array.isArray(parsed) && parsed.length > 0) {
-                            state.vehicles = parsed;
-                            renderCatalog();
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            // 🟢 STEP 2: FETCH PAGINATED BATCH FROM SUPABASE RANGE (PREVENTS RATE LIMIT & FREEZE) 🟢
+        // ================= ⚡ DATA DEFERRED FETCH (MASTER ARCHITECTURE) ⚡ =================
+        async function fetchVehicles() {
             try {
                 if (supabaseClient) {
-                    const start = loadMore ? state.vehicles.length : 0;
-                    const end = start + state.pageSize - 1;
-
+                    // 🟢 1. FETCH TEXT ONLY! (NO IMAGES). This is 100x faster and never blocks the phone 🟢
                     const { data, error } = await supabaseClient
                         .from('atlas_vehicles')
-                        .select('*')
-                        .range(start, end);
+                        .select('id, marque, modele, prix, annee, km, boite, moteur, couleur, desc, "typeCategory", status, created_at, "createdAt"');
 
                     if (!error && Array.isArray(data)) {
-                        if (loadMore) {
-                            // Append new unique items
-                            const existingIds = new Set(state.vehicles.map(v => String(v.id)));
-                            const newItems = data.filter(v => !existingIds.has(String(v.id)));
-                            state.vehicles = [...state.vehicles, ...newItems];
-                        } else if (data.length > 0) {
-                            state.vehicles = data;
-                        }
-
-                        if (data.length < state.pageSize) {
-                            state.hasMore = false;
-                        }
-
-                        // Local sort
-                        state.vehicles.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
-                        localStorage.setItem('atlas_vehicles_cache_v4', JSON.stringify(state.vehicles));
+                        data.sort((a, b) => (Number(b.createdAt || b.id || 0)) - (Number(a.createdAt || a.id || 0)));
+                        state.vehicles = data;
                         
-                        renderCatalog();
+                        const page3 = document.getElementById('page-3');
+                        if(page3 && page3.classList.contains('active')) renderCatalog();
                         if(state.isOwnerSession) renderAdminInventory();
                     }
                 }
             } catch (err) {
-                console.warn("Supabase fetch error:", err);
-            } finally {
-                state.isLoading = false;
+                console.warn("Fetch error:", err);
             }
         }
 
-        async function saveVehicleToDb(car) {
-            try {
-                if (supabaseClient) {
-                    const { error } = await supabaseClient.from('atlas_vehicles').upsert([car]);
-                    if (error) {
-                        alert("خطأ أثناء الحفظ في Supabase: " + error.message);
-                        return false;
-                    }
-                } else {
-                    const index = state.vehicles.findIndex(v => String(v.id) === String(car.id));
-                    if (index > -1) state.vehicles[index] = car;
-                    else state.vehicles.unshift(car);
-                    localStorage.setItem('atlas_vehicles_cache_v4', JSON.stringify(state.vehicles));
-                }
-                
-                localStorage.removeItem('atlas_vehicles_cache_v4');
-                await fetchVehicles(false);
-                return true;
-            } catch (err) {
-                alert("حدث خطأ غير متوقع: " + err.message);
-                return false;
-            }
-        }
-
-        async function deleteVehicleFromDb(id) {
-            if(!confirm("حذف السيارة نهائياً؟")) return;
-            try {
-                if (supabaseClient) {
-                    await supabaseClient.from('atlas_vehicles').delete().eq('id', id);
-                } else {
-                    state.vehicles = state.vehicles.filter(v => String(v.id) !== String(id));
-                    localStorage.setItem('atlas_vehicles_cache_v4', JSON.stringify(state.vehicles));
-                }
-                localStorage.removeItem('atlas_vehicles_cache_v4');
-                await fetchVehicles(false);
-                showToast("تم الحذف بنجاح");
-            } catch (err) {
-                console.error("Delete Error:", err);
-            }
-        }
-
-        async function toggleSoldStatus(id) {
-            const car = state.vehicles.find(v => String(v.id) === String(id));
-            if(!car) return;
-            car.status = car.status === 'disponible' ? 'vendu' : 'disponible';
-            await saveVehicleToDb(car);
-        }
-
-        // ================= 🏷️ BRAND FILTER CHIPS RENDERER 🏷️ =================
-        function renderBrandFilters() {
-            const container = document.getElementById('brandFilterContainer');
-            if(!container) return;
-
-            let relevant = Array.isArray(state.vehicles) ? state.vehicles : [];
-            if(state.currentScope !== 'all') {
-                relevant = relevant.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
-            }
-
-            const brands = [...new Set(relevant.map(v => v && v.marque ? v.marque.trim().toUpperCase() : '').filter(Boolean))].sort();
-
-            if (brands.length === 0) {
-                container.innerHTML = '';
+        // 🟢 2. LAZY FETCH IMAGES ONLY WHEN CAR IS VISIBLE 🟢
+        async function fetchCarImages(carId) {
+            if(state.imageCache[carId]) {
+                injectImagesIntoDOM(carId, state.imageCache[carId]);
                 return;
             }
-
-            const isAllActive = state.selectedBrand === 'all';
-            let html = `
-                <button onclick="selectBrandFilter('all')" class="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer ${isAllActive ? 'bg-laserorange text-white shadow-[0_0_12px_rgba(255,85,0,0.5)]' : 'bg-cardgray border border-white/10 text-zinc-400 hover:text-white'}">
-                    الكل
-                </button>
-            `;
-
-            brands.forEach(b => {
-                const isActive = state.selectedBrand === b;
-                html += `
-                    <button onclick="selectBrandFilter('${b}')" class="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer ${isActive ? 'bg-laserorange text-white shadow-[0_0_12px_rgba(255,85,0,0.5)]' : 'bg-cardgray border border-white/10 text-zinc-400 hover:text-white'}">
-                        ${b}
-                    </button>
-                `;
-            });
-
-            container.innerHTML = html;
-        }
-
-        function selectBrandFilter(brand) {
-            state.selectedBrand = brand;
-            renderBrandFilters();
-            renderCatalog();
-        }
-
-        // ================= INFINITE SCROLL LISTENER =================
-        function handleCatalogScroll() {
-            const area = document.getElementById('catalog-scroll-area');
-            if(!area) return;
-            if(area.scrollTop + area.clientHeight >= area.scrollHeight - 250) {
-                if(state.hasMore && !state.isLoading) {
-                    fetchVehicles(true);
+            try {
+                const { data } = await supabaseClient.from('atlas_vehicles').select('images, image').eq('id', carId).single();
+                if(data) {
+                    const imgs = (Array.isArray(data.images) && data.images.length > 0) ? data.images : (data.image ? [data.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
+                    state.imageCache[carId] = imgs;
+                    injectImagesIntoDOM(carId, imgs);
                 }
+            } catch(e) {}
+        }
+
+        function injectImagesIntoDOM(carId, imgs) {
+            // Update Catalog Card
+            const swiperContainer = document.getElementById(`card-swiper-${carId}`);
+            if(swiperContainer) {
+                swiperContainer.innerHTML = `
+                    <div class="snap-center-item w-full h-full shrink-0 relative">
+                        <img src="${imgs[0]}" class="w-full h-full object-cover transition-opacity duration-500 fade-in">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
+                    </div>
+                `;
+                
+                // Add Pagination Dots if multiple images
+                const dotsWrapper = document.getElementById(`dots-wrapper-${carId}`);
+                if (dotsWrapper && imgs.length > 1) {
+                    dotsWrapper.innerHTML = `<div class="absolute bottom-24 w-full flex justify-center gap-1.5 z-10 pointer-events-none" id="dots-${carId}">` + 
+                        imgs.map((_, i) => `<div class="car-dot-${carId} w-1.5 h-1.5 rounded-full transition-all ${i===0?'bg-laserorange w-3':'bg-white/30'}"></div>`).join('') + `</div>`;
+                    
+                    // Delay secondary images to keep main thread completely free
+                    setTimeout(() => loadCarSecondaryImages(carId, imgs), 800);
+                }
+            }
+
+            // Update Admin Panel Image
+            const adminImg = document.getElementById(`admin-img-${carId}`);
+            if(adminImg) {
+                adminImg.src = imgs[0];
+                adminImg.classList.remove('animate-pulse', 'grayscale');
             }
         }
 
-        // ================= ⚡ INTERSECTION OBSERVER LAZY LOADER ⚡ =================
+        // ================= ⚡ INTERSECTION OBSERVER (THE MAGIC SENSOR) ⚡ =================
         function initIntersectionObserver() {
-            if (intersectionObserver) intersectionObserver.disconnect();
-            
-            intersectionObserver = new IntersectionObserver((entries, observer) => {
+            if (imgObserver) imgObserver.disconnect();
+            imgObserver = new IntersectionObserver((entries, observer) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
-                        const img = entry.target;
-                        if (img.dataset.src) {
-                            img.src = img.dataset.src;
-                            img.removeAttribute('data-src');
-                        }
-                        observer.unobserve(img);
+                        const carId = entry.target.dataset.carId;
+                        fetchCarImages(carId);
+                        observer.unobserve(entry.target);
                     }
                 });
-            }, { rootMargin: '200px 0px' });
+            }, { rootMargin: '300px 0px' });
 
-            document.querySelectorAll('img[data-src]').forEach(img => intersectionObserver.observe(img));
+            document.querySelectorAll('.car-card-observe').forEach(card => imgObserver.observe(card));
         }
 
         // ================= CATALOG RENDERER =================
@@ -893,20 +786,14 @@
             const search = searchEl ? searchEl.value.toLowerCase().trim() : '';
             
             let filtered = Array.isArray(state.vehicles) ? state.vehicles : [];
-            
             if(state.currentScope !== 'all') {
                 filtered = filtered.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
             }
-
             if (state.selectedBrand && state.selectedBrand !== 'all') {
                 filtered = filtered.filter(v => v && v.marque && v.marque.trim().toUpperCase() === state.selectedBrand);
             }
-
             if (search) {
-                filtered = filtered.filter(v => 
-                    (v && v.marque && v.marque.toLowerCase().includes(search)) || 
-                    (v && v.modele && v.modele.toLowerCase().includes(search))
-                );
+                filtered = filtered.filter(v => (v && v.marque && v.marque.toLowerCase().includes(search)) || (v && v.modele && v.modele.toLowerCase().includes(search)));
             }
 
             grid.innerHTML = '';
@@ -918,36 +805,20 @@
             filtered.forEach(car => {
                 if(!car) return;
                 const isSold = car.status === 'vendu';
-                
-                let tagColor = 'bg-white text-black';
-                let tagText = 'معرض';
-                if (car.typeCategory === 'commande') {
-                    tagColor = 'bg-laserorange text-white';
-                    tagText = 'بالطلب';
-                } else if (car.typeCategory === 'both') {
-                    tagColor = 'bg-gradient-to-r from-laserorange to-zinc-900 text-white border border-laserorange/50';
-                    tagText = 'معرض + بالطلب';
-                }
+                const tagColor = (car.typeCategory === 'commande') ? 'bg-laserorange text-white' : (car.typeCategory === 'both' ? 'bg-gradient-to-r from-laserorange to-zinc-900 text-white border border-laserorange/50' : 'bg-white text-black');
+                const tagText = (car.typeCategory === 'commande') ? 'بالطلب' : (car.typeCategory === 'both' ? 'معرض + بالطلب' : 'معرض');
 
-                const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
-
-                // ⚡ INTERSECTION OBSERVER DATA-SRC (ZERO RAM OVERLOAD) ⚡
-                let initialImageHTML = `
-                    <div class="snap-center-item w-full h-full shrink-0 relative">
-                        <img data-src="${carImages[0]}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" class="w-full h-full object-cover transition-opacity duration-300" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
-                    </div>
-                `;
-
-                let dotsHTML = carImages.length > 1 ? `<div class="absolute bottom-24 w-full flex justify-center gap-1.5 z-10 pointer-events-none" id="dots-${car.id}">` + 
-                    carImages.map((_, i) => `<div class="car-dot-${car.id} w-1.5 h-1.5 rounded-full transition-all ${i===0?'bg-laserorange w-3':'bg-white/30'}"></div>`).join('') + `</div>` : '';
-
+                // 🟢 RENDER SKELETON FIRST (INSTANT PAINT) 🟢
                 grid.innerHTML += `
-                <div class="relative w-full aspect-square rounded-[24px] overflow-hidden ${isSold ? 'car-sold-glow' : 'border border-white/10 shadow-lg'} group">
-                    <div id="card-swiper-${car.id}" class="w-full h-full flex overflow-x-auto snap-x-mandatory hide-scrollbar cursor-pointer" dir="ltr" onscroll="syncCardDots('${car.id}')" onclick="openCarDetails('${car.id}')" onmouseenter="loadCarSecondaryImages('${car.id}')" ontouchstart="loadCarSecondaryImages('${car.id}')">
-                        ${initialImageHTML}
+                <div class="car-card-observe relative w-full aspect-square rounded-[24px] overflow-hidden ${isSold ? 'car-sold-glow' : 'border border-white/10 shadow-lg'} group" data-car-id="${car.id}">
+                    
+                    <div id="card-swiper-${car.id}" class="w-full h-full flex overflow-x-auto snap-x-mandatory hide-scrollbar cursor-pointer" dir="ltr" onscroll="syncCardDots('${car.id}')" onclick="openCarDetails('${car.id}')">
+                        <div class="w-full h-full flex items-center justify-center bg-cardgray">
+                            <i class="fa-solid fa-spinner fa-spin text-3xl text-laserorange"></i>
+                        </div>
                     </div>
-                    ${dotsHTML}
+                    
+                    <div id="dots-wrapper-${car.id}"></div>
                     
                     ${isSold ? `<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 sold-badge-fx px-4 py-1 rounded-lg text-sm font-black tracking-widest transform -rotate-12 z-20 pointer-events-none">مباعة ❌</div>` : ''}
                     
@@ -969,41 +840,56 @@
                         </div>
                     </div>
                 </div>`;
-
-                if (carImages.length > 1) {
-                    setTimeout(() => startAutoCarousel(car.id), 1500);
-                }
             });
 
-            // Activate IntersectionObserver for Images
+            // Start observing the newly rendered skeletons
             initIntersectionObserver();
         }
 
-        function loadCarSecondaryImages(carId) {
+        // ================= BRAND FILTER & SECONDARY IMAGES =================
+        function renderBrandFilters() {
+            const container = document.getElementById('brandFilterContainer');
+            if(!container) return;
+
+            let relevant = Array.isArray(state.vehicles) ? state.vehicles : [];
+            if(state.currentScope !== 'all') {
+                relevant = relevant.filter(v => v && (v.typeCategory === state.currentScope || v.typeCategory === 'both'));
+            }
+
+            const brands = [...new Set(relevant.map(v => v && v.marque ? v.marque.trim().toUpperCase() : '').filter(Boolean))].sort();
+
+            if (brands.length === 0) {
+                container.innerHTML = ''; return;
+            }
+
+            const isAllActive = state.selectedBrand === 'all';
+            let html = `<button onclick="selectBrandFilter('all')" class="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer ${isAllActive ? 'bg-laserorange text-white shadow-[0_0_12px_rgba(255,85,0,0.5)]' : 'bg-cardgray border border-white/10 text-zinc-400 hover:text-white'}">الكل</button>`;
+
+            brands.forEach(b => {
+                const isActive = state.selectedBrand === b;
+                html += `<button onclick="selectBrandFilter('${b}')" class="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer ${isActive ? 'bg-laserorange text-white shadow-[0_0_12px_rgba(255,85,0,0.5)]' : 'bg-cardgray border border-white/10 text-zinc-400 hover:text-white'}">${b}</button>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function loadCarSecondaryImages(carId, imgs) {
             const track = document.getElementById(`card-swiper-${carId}`);
-            const car = state.vehicles.find(v => v && String(v.id) === String(carId));
-            if(!track || !car) return;
+            if(!track) return;
 
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : []);
-            if(carImages.length <= 1 || track.children.length > 1) return;
-
-            for(let i = 1; i < carImages.length; i++) {
+            for(let i = 1; i < imgs.length; i++) {
                 const imgDiv = document.createElement('div');
                 imgDiv.className = 'snap-center-item w-full h-full shrink-0 relative';
-                imgDiv.innerHTML = `
-                    <img src="${carImages[i]}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50'">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>
-                `;
+                imgDiv.innerHTML = `<img src="${imgs[i]}" loading="lazy" class="w-full h-full object-cover"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 pointer-events-none"></div>`;
                 track.appendChild(imgDiv);
             }
+            startAutoCarousel(carId);
         }
 
         function startAutoCarousel(carId) {
             const track = document.getElementById(`card-swiper-${carId}`);
             if(!track) return;
-            
             autoCarousels[carId] = setInterval(() => {
-                loadCarSecondaryImages(carId);
                 const width = track.clientWidth;
                 let nextScroll = track.scrollLeft + width;
                 if(nextScroll >= track.scrollWidth - 10) nextScroll = 0;
@@ -1017,46 +903,33 @@
             const currentIndex = Math.round(track.scrollLeft / track.clientWidth);
             const dots = document.querySelectorAll(`.car-dot-${carId}`);
             dots.forEach((dot, idx) => {
-                if(idx === currentIndex) {
-                    dot.className = `car-dot-${carId} w-3 h-1.5 rounded-full bg-laserorange transition-all`;
-                } else {
-                    dot.className = `car-dot-${carId} w-1.5 h-1.5 rounded-full bg-white/30 transition-all`;
-                }
+                dot.className = (idx === currentIndex) ? `car-dot-${carId} w-3 h-1.5 rounded-full bg-laserorange transition-all` : `car-dot-${carId} w-1.5 h-1.5 rounded-full bg-white/30 transition-all`;
             });
         }
 
-        // ================= GALLERY SCROLLER =================
-        function scrollModalGallery(direction) {
-            const gallery = document.getElementById('modal-image-swiper');
-            if(!gallery) return;
-            const slideWidth = gallery.clientWidth;
-            gallery.scrollBy({ left: direction * slideWidth, behavior: 'smooth' });
-        }
-
-        function syncSwiperImageCounter() {
-            const gallery = document.getElementById('modal-image-swiper');
-            if(!gallery || !gallery.clientWidth) return;
-            const currentIndex = Math.round(gallery.scrollLeft / gallery.clientWidth) + 1;
-            const total = gallery.children.length;
-            const counter = document.getElementById('gallery-indicator-counter');
-            if(counter) counter.innerText = `${Math.max(1, currentIndex)} / ${total || 1}`;
-        }
-
-        // ================= DETAILS & LEAD FORM =================
-        function openCarDetails(id) {
+        // ================= DETAILS MODAL =================
+        async function openCarDetails(id) {
             const car = state.vehicles.find(v => v && String(v.id) === String(id));
             if(!car) return;
 
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"]);
+            let imgs = state.imageCache[id];
+            // If user somehow clicked before image arrived, fetch it
+            if(!imgs) {
+                const { data } = await supabaseClient.from('atlas_vehicles').select('images, image').eq('id', id).single();
+                imgs = data ? ((Array.isArray(data.images) && data.images.length > 0) ? data.images : [data.image]) : ["https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50"];
+                state.imageCache[id] = imgs;
+            }
 
             const swiper = document.getElementById('modal-image-swiper');
-            swiper.innerHTML = carImages.map((img, idx) => `
+            swiper.innerHTML = imgs.map((img, idx) => `
                 <div class="w-full h-full snap-center-item shrink-0 flex items-center justify-center bg-black relative min-w-full">
-                    <img src="${img}" loading="${idx === 0 ? 'eager' : 'lazy'}" decoding="async" class="w-full h-full object-cover">
+                    <img src="${img}" class="w-full h-full object-cover">
                 </div>
             `).join('');
             swiper.scrollLeft = 0;
-            syncSwiperImageCounter();
+            
+            const counter = document.getElementById('gallery-indicator-counter');
+            if(counter) counter.innerText = `1 / ${imgs.length}`;
 
             document.getElementById('det-title').innerText = `${car.marque || ''} ${car.modele || ''}`;
             document.getElementById('det-price').innerText = car.prix || '';
@@ -1067,14 +940,11 @@
             document.getElementById('det-couleur').innerText = car.couleur || "-";
             document.getElementById('det-desc').innerText = car.desc || "لا توجد معلومات إضافية.";
             
-            let catLabel = 'متوفرة في المعرض';
-            if(car.typeCategory === 'commande') catLabel = 'استيراد بالطلب';
-            else if(car.typeCategory === 'both') catLabel = 'معرض + استيراد بالطلب';
+            let catLabel = car.typeCategory === 'commande' ? 'استيراد بالطلب' : (car.typeCategory === 'both' ? 'معرض + استيراد بالطلب' : 'متوفرة في المعرض');
             document.getElementById('det-cat').innerText = catLabel;
             
             const soldBadge = document.getElementById('det-sold-badge');
             const formSection = document.getElementById('booking-section');
-            
             if (car.status === 'vendu') {
                 soldBadge.classList.remove('hidden');
                 formSection.classList.add('hidden');
@@ -1093,9 +963,7 @@
             const modal = document.getElementById('carDetailModal');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
-            setTimeout(() => {
-                document.getElementById('carDetailSheet').classList.remove('translate-y-full');
-            }, 10);
+            setTimeout(() => document.getElementById('carDetailSheet').classList.remove('translate-y-full'), 10);
         }
 
         function closeDetailModal() {
@@ -1105,6 +973,20 @@
                 modal.classList.add('hidden');
                 modal.classList.remove('flex');
             }, 400);
+        }
+
+        function scrollModalGallery(direction) {
+            const gallery = document.getElementById('modal-image-swiper');
+            if(!gallery) return;
+            gallery.scrollBy({ left: direction * gallery.clientWidth, behavior: 'smooth' });
+        }
+
+        function syncSwiperImageCounter() {
+            const gallery = document.getElementById('modal-image-swiper');
+            if(!gallery || !gallery.clientWidth) return;
+            const currentIndex = Math.round(gallery.scrollLeft / gallery.clientWidth) + 1;
+            const counter = document.getElementById('gallery-indicator-counter');
+            if(counter) counter.innerText = `${Math.max(1, currentIndex)} / ${gallery.children.length || 1}`;
         }
 
         function submitLeadForm(e) {
@@ -1139,20 +1021,17 @@
             setTimeout(() => {
                 document.getElementById('booking-form-wrapper').classList.remove('block');
                 document.getElementById('booking-form-wrapper').classList.add('hidden');
-                
                 document.getElementById('thank-you-wrapper').classList.remove('hidden');
                 document.getElementById('thank-you-wrapper').classList.add('flex');
-                
                 document.getElementById('btn-wa-continue').onclick = () => {
                     window.open(waUrl, '_blank');
                     closeDetailModal();
                 };
-                
                 btn.innerHTML = originalText;
             }, 600);
         }
 
-        // ================= ADMIN SYSTEM =================
+        // ================= ADMIN SYSTEM & IMAGE UPLOAD =================
         function openAdminAuth() {
             if(state.isOwnerSession) {
                 const adminCenter = document.getElementById('ownerCommandCenter');
@@ -1169,7 +1048,6 @@
             document.getElementById('biometricPinOverlay').classList.add('hidden');
             document.getElementById('pinInput').value = '';
         }
-        
         function handlePinSubmission() {
             const input = document.getElementById('pinInput');
             if (input.value === "Atlas16") {
@@ -1180,7 +1058,6 @@
                 input.value = '';
             }
         }
-        
         function lockAdminSession() {
             state.isOwnerSession = false;
             localStorage.setItem('isOwnerVerified', 'false');
@@ -1193,6 +1070,38 @@
             CONFIG.googleScriptUrl = document.getElementById('admin-google-script').value.trim();
             localStorage.setItem('atlas_google_script', CONFIG.googleScriptUrl);
             showToast("تم الحفظ");
+        }
+
+        async function saveVehicleToDb(car) {
+            try {
+                if (supabaseClient) {
+                    const { error } = await supabaseClient.from('atlas_vehicles').upsert([car]);
+                    if (error) {
+                        alert("خطأ أثناء الحفظ في Supabase: " + error.message);
+                        return false;
+                    }
+                }
+                await fetchVehicles();
+                return true;
+            } catch (err) {
+                return false;
+            }
+        }
+
+        async function deleteVehicleFromDb(id) {
+            if(!confirm("حذف السيارة نهائياً؟")) return;
+            try {
+                if (supabaseClient) await supabaseClient.from('atlas_vehicles').delete().eq('id', id);
+                await fetchVehicles();
+                showToast("تم الحذف بنجاح");
+            } catch (err) {}
+        }
+
+        async function toggleSoldStatus(id) {
+            const car = state.vehicles.find(v => String(v.id) === String(id));
+            if(!car) return;
+            car.status = car.status === 'disponible' ? 'vendu' : 'disponible';
+            await saveVehicleToDb(car);
         }
 
         async function handleMultipleImages(e) {
@@ -1226,10 +1135,9 @@
                         const size = Math.min(img.width, img.height);
                         const startX = (img.width - size) / 2;
                         const startY = (img.height - size) / 2;
-                        
                         canvas.width = 450; canvas.height = 450;
                         ctx.drawImage(img, startX, startY, size, size, 0, 0, 450, 450);
-                        resolve(canvas.toDataURL('image/jpeg', 0.45));
+                        resolve(canvas.toDataURL('image/jpeg', 0.42));
                     };
                     img.src = e.target.result;
                 };
@@ -1244,8 +1152,13 @@
             btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin text-black"></i> جاري الحفظ في Supabase...`;
 
             const carId = document.getElementById('form-car-id').value || `car_${Date.now()}`;
-            const existingCar = state.vehicles.find(v => v && String(v.id) === String(carId));
-            const finalImages = state.tempImages.length > 0 ? state.tempImages : (existingCar ? (existingCar.images || [existingCar.image]) : []);
+            
+            // Check if existing car, if no new images were added, fetch old images from DB
+            let finalImages = state.tempImages;
+            if (finalImages.length === 0) {
+                const { data } = await supabaseClient.from('atlas_vehicles').select('images, image').eq('id', carId).single();
+                if (data) finalImages = data.images || [data.image];
+            }
 
             if(!finalImages || finalImages.length === 0) {
                 alert("يرجى إرفاق صورة واحدة على الأقل.");
@@ -1266,12 +1179,12 @@
                 couleur: document.getElementById('f-couleur').value,
                 desc: document.getElementById('f-desc').value,
                 images: finalImages,
-                status: existingCar ? existingCar.status : 'disponible',
-                createdAt: existingCar ? existingCar.createdAt : Date.now()
+                status: 'disponible',
+                createdAt: Date.now()
             };
 
             const success = await saveVehicleToDb(payload);
-            if(success) { showToast("تم الحفظ في Supabase بنجاح!"); resetAdminForm(); } 
+            if(success) { showToast("تم الحفظ بنجاح!"); resetAdminForm(); } 
             
             btn.innerHTML = originalText;
         }
@@ -1280,7 +1193,6 @@
             const car = state.vehicles.find(v => v && String(v.id) === String(id));
             if(!car) return;
             document.getElementById('btn-cancel-edit').classList.remove('hidden');
-            
             document.getElementById('form-car-id').value = car.id;
             document.getElementById('f-category').value = car.typeCategory || 'disponible';
             document.getElementById('f-prix').value = car.prix || '';
@@ -1294,12 +1206,9 @@
             document.getElementById('f-desc').value = car.desc || '';
             
             state.tempImages = [];
-            const container = document.getElementById('multi-img-preview-container');
-            const carImages = (Array.isArray(car.images) && car.images.length > 0) ? car.images : (car.image ? [car.image] : []);
-            container.innerHTML = carImages.map(img => `<img src="${img}" class="w-16 h-16 object-cover rounded-lg border border-white/20">`).join('');
-            container.classList.remove('hidden');
-            document.getElementById('f-image-label').innerText = "(اضغط لتغيير الصور)";
-            
+            document.getElementById('multi-img-preview-container').innerHTML = '';
+            document.getElementById('multi-img-preview-container').classList.add('hidden');
+            document.getElementById('f-image-label').innerText = "(اضغط هنا إذا أردت تغيير الصور)";
             document.getElementById('adminFormSection').scrollIntoView({behavior: 'smooth', block: 'start'});
         }
 
@@ -1322,18 +1231,15 @@
             state.vehicles.forEach(car => {
                 if(!car) return;
                 const isSold = car.status === 'vendu';
-                const firstImg = (Array.isArray(car.images) && car.images.length > 0) ? car.images[0] : (car.image || "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=50");
-
                 list.innerHTML += `
-                <div class="glass-panel border ${isSold ? 'border-red-600 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'border-white/10'} p-3 rounded-2xl flex flex-col gap-3 transition-all" dir="ltr">
+                <div class="glass-panel border ${isSold ? 'border-red-600 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'border-white/10'} p-3 rounded-2xl flex flex-col gap-3 transition-all car-card-observe" data-car-id="${car.id}" dir="ltr">
                     <div class="flex items-center gap-3">
-                        <img src="${firstImg}" class="w-14 h-14 rounded-xl object-cover border border-white/10 ${isSold ? 'grayscale' : ''}">
+                        <img id="admin-img-${car.id}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" class="w-14 h-14 rounded-xl object-cover border border-white/10 animate-pulse bg-zinc-800 ${isSold ? 'grayscale' : ''}">
                         <div class="flex-1 min-w-0">
                             <h4 class="text-[11px] font-brand font-black text-white truncate">${car.marque || ''} ${car.modele || ''}</h4>
                             <p class="text-[9px] text-zinc-400 mt-0.5">${car.prix || ''} • <span class="${car.typeCategory === 'commande' ? 'text-laserorange' : 'text-white'}">${car.typeCategory || 'disponible'}</span></p>
                         </div>
                     </div>
-
                     <div class="flex items-center justify-between bg-black p-2 rounded-xl border border-white/10" dir="rtl">
                         <div class="flex items-center gap-2">
                             <label class="relative inline-flex items-center cursor-pointer">
@@ -1344,7 +1250,6 @@
                             </label>
                             <span class="text-[8px] font-black ${isSold ? 'text-laserorange' : 'text-white'} uppercase tracking-widest">${isSold ? 'مباعة' : 'متوفرة'}</span>
                         </div>
-
                         <div class="flex items-center gap-1.5" dir="ltr">
                             <button onclick="editCar('${car.id}')" class="w-8 h-8 rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-white hover:text-black transition cursor-pointer"><i class="fa-solid fa-pen text-[10px]"></i></button>
                             <button onclick="deleteVehicleFromDb('${car.id}')" class="w-8 h-8 rounded-lg bg-red-500/20 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition cursor-pointer"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
@@ -1352,6 +1257,8 @@
                     </div>
                 </div>`;
             });
+
+            initIntersectionObserver();
         }
 
         function showToast(msg) {
@@ -1373,7 +1280,7 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             applySocialConfig();
-            fetchVehicles(false);
+            fetchVehicles();
         });
     </script>
 </body>
